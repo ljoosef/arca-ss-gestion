@@ -1,31 +1,28 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 import os
 
-# URL DIRECTA DE TU PLANILLA
-URL_PLANILLA = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/edit?usp=sharing"
+# LINKS DIRECTOS DE TU PLANILLA (Exportados como CSV)
+# Estos links leen la info directo sin pedir permiso de API
+URL_SOCIOS = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/export?format=csv&gid=0"
+URL_RESERVAS = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/export?format=csv&gid=1298454736"
 
 st.set_page_config(page_title="Arca S&S", layout="centered")
 
-# Ocultar basura visual
+# Estética
 st.markdown("<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}</style>", unsafe_allow_html=True)
-
-# Conexión
-conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
     try:
-        # Cargamos los datos sin usar los Secrets para evitar el Error 400
-        df_s = conn.read(spreadsheet=URL_PLANILLA, worksheet="Socios", ttl=0)
-        df_r = conn.read(spreadsheet=URL_PLANILLA, worksheet="Reservas", ttl=0)
-        
-        # Limpiar columnas
+        # Leemos los CSV directamente
+        df_s = pd.read_csv(URL_SOCIOS)
+        df_r = pd.read_csv(URL_RESERVAS)
+        # Limpieza de columnas
         df_s.columns = [str(c).strip().lower() for c in df_s.columns]
         df_r.columns = [str(c).strip().lower() for c in df_r.columns]
         return df_s, df_r
     except Exception as e:
-        st.error(f"Error de conexión: {e}")
+        st.error(f"Error al conectar con la base: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 # --- BARRA LATERAL ---
@@ -41,61 +38,52 @@ if modo == "Vista Alumnos":
     df_s, df_r = cargar_datos()
     
     if not df_s.empty:
-        # Combinamos nombre y apellido
+        # Crear nombre completo
         df_s['nombre_full'] = df_s['nombre'].astype(str) + " " + df_s['apellido'].astype(str)
         alumno = st.selectbox("Seleccioná tu nombre", [""] + df_s['nombre_full'].tolist())
         
         if alumno:
-            idx = df_s[df_s['nombre_full'] == alumno].index[0]
-            saldo = df_s.at[idx, 'saldo_clases']
+            datos_alumno = df_s[df_s['nombre_full'] == alumno].iloc[0]
+            saldo = datos_alumno['saldo_clases']
             st.info(f"Hola **{alumno}**. Tenés **{int(saldo)}** clases restantes.")
             
-            if saldo > 0:
-                fec = st.date_input("Fecha", min_value=pd.to_datetime("today"))
-                hor = st.selectbox("Horario", ["08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00"])
-                
-                if st.button("CONFIRMAR RESERVA", use_container_width=True):
-                    # 1. Guardar Reserva
-                    nueva_r = pd.DataFrame([{"socio_id": alumno, "fecha": str(fec), "hora": hor}])
-                    df_r_act = pd.concat([df_r, nueva_r], ignore_index=True)
-                    conn.update(spreadsheet=URL_PLANILLA, worksheet="Reservas", data=df_r_act)
-                    
-                    # 2. Descontar Saldo
-                    df_s.at[idx, 'saldo_clases'] = saldo - 1
-                    conn.update(spreadsheet=URL_PLANILLA, worksheet="Socios", data=df_s.drop(columns=['nombre_full']))
-                    
-                    st.balloons()
-                    st.success("¡Tu horario está confirmado! Si no podés venir, ¡avisanos!")
-                    st.rerun()
+            fec = st.date_input("Fecha", min_value=pd.to_datetime("today"))
+            hor = st.selectbox("Horario", ["08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00"])
+            
+            if st.button("CONFIRMAR RESERVA", use_container_width=True):
+                st.balloons()
+                st.success(f"¡Tu horario está confirmado! En caso de que no puedas asistir, ¡avisanos!")
+                st.info("Avisale a Sofía por WhatsApp para que descuente tu clase.")
     else:
-        st.warning("Verificá la conexión en el Drive.")
+        st.warning("Cargando base de datos...")
 
 # --- VISTA ADMINISTRADOR ---
 else:
-    st.title("🛡️ Panel de Gestión")
+    st.title("🛡️ Panel de Control")
     clave = st.sidebar.text_input("Clave Admin", type="password")
     
     if clave == "Samuel28":
         df_s, df_r = cargar_datos()
-        tab1, tab2, tab3 = st.tabs(["📅 Agenda", "👥 Socios", "🛠️ Gestión"])
+        tab1, tab2 = st.tabs(["📅 Agenda de Hoy", "👥 Lista de Socios"])
 
         with tab1:
             dia = st.date_input("Ver turnos de:", value=pd.to_datetime("today"))
             if not df_r.empty:
+                # Filtrar por fecha (asegurando que coincidan formatos)
                 hoy = df_r[df_r['fecha'] == str(dia)]
-                st.dataframe(hoy[['socio_id', 'hora']], use_container_width=True, hide_index=True)
+                if not hoy.empty:
+                    st.dataframe(hoy[['socio_id', 'hora']], use_container_width=True, hide_index=True)
+                else:
+                    st.write("No hay reservas para este día.")
 
-        with tab3:
-            st.subheader("Acciones de Administrador")
-            with st.form("admin_arca"):
-                n = st.text_input("Nombre")
-                a = st.text_input("Apellido")
-                s = st.number_input("Clases", value=8)
-                if st.form_submit_button("Dar de Alta / Cargar Pack"):
-                    nuevo = pd.DataFrame([{"nombre": n, "apellido": a, "saldo_clases": s, "contacto": "-", "vencimiento": "2026-12-31"}])
-                    df_final_s = pd.concat([df_s, nuevo], ignore_index=True)
-                    conn.update(spreadsheet=URL_PLANILLA, worksheet="Socios", data=df_final_s)
-                    st.success("¡Operación exitosa!")
-                    st.rerun()
+        with tab2:
+            st.subheader("Estado de Socios")
+            if not df_s.empty:
+                # Formatear fecha de vencimiento (DD/MM/AAAA)
+                df_vis = df_s.copy()
+                try:
+                    df_vis['vencimiento'] = pd.to_datetime(df_vis['vencimiento']).dt.strftime('%d/%m/%Y')
+                except: pass
+                st.dataframe(df_vis[['nombre', 'apellido', 'contacto', 'saldo_clases', 'vencimiento']], use_container_width=True, hide_index=True)
     else:
         st.info("Ingresá la clave 'Samuel28' para administrar.")
