@@ -106,19 +106,3 @@ else:
                 msg = f"ALTA: {n} {a} - Pack: {s} clases - Vence: {v}"
                 link = f"https://wa.me/{CELULAR_ADMIN}?text={urllib.parse.quote(msg)}"
                 st.markdown(f'<a href="{link}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:white;padding:12px;text-align:center;border-radius:8px;">📲 ENVIAR ALTA A SOFÍA</div></a>', unsafe_allow_html=True)
-# --- VISTA ADMIN ---
-else:
-    if st.text_input("Clave:", type="password") == "Samuel28":
-        t1, t2 = st.tabs(["Socios", "Cargar Nuevo"])
-        with t1:
-            if not df_s.empty:
-                st.dataframe(df_s, hide_index=True)
-        with t2:
-            st.write("Para cargar nuevo socio:")
-            n = st.text_input("Nombre"); a = st.text_input("Apellido")
-            s = st.number_input("Clases", value=8); v = st.date_input("Vence")
-            if st.button("GENERAR ALTA"):
-                msg = f"ALTA NUEVA: {n} {a}, Pack {s} clases, Vence {v}"
-                link = f"https://wa.me/{CELULAR_ADMIN}?text={urllib.parse.quote(msg)}"
-                st.markdown(f'<a href="{link}" target="_blank">📲 ENVIAR ALTA POR WHATSAPP</a>', unsafe_allow_html=True)
-
