@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 
-# URL DE EXPORTACIÓN DIRECTA (Esta no falla nunca)
+# URL DE EXPORTACIÓN DIRECTA
 URL_SOCIOS = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/export?format=csv&gid=1298454736"
 
 st.set_page_config(page_title="Arca S&S", layout="centered")
@@ -18,14 +18,18 @@ if os.path.exists("logo.png"):
 st.title("🏋️ Arca S&S")
 
 try:
-    # LEER SOCIOS
+    # LEER DATOS
     df = pd.read_csv(URL_SOCIOS)
     
-    # Limpiar nombres de columnas
+    # Limpiamos los nombres de las columnas para que no haya errores
     df.columns = [str(c).strip().lower() for c in df.columns]
 
-    if 'nombre' in df.columns:
-        lista_nombres = df['nombre'].dropna().unique().tolist()
+    # BUSCAMOS LA COLUMNA QUE CONTENGA LA PALABRA 'NOMBRE'
+    col_encontrada = [c for c in df.columns if 'nombre' in c]
+
+    if col_encontrada:
+        col_real = col_encontrada[0]
+        lista_nombres = df[col_real].dropna().unique().tolist()
         
         st.success("✅ Sistema Listo")
         alumno = st.selectbox("¿Quién entrena hoy?", ["Seleccionar..."] + lista_nombres)
@@ -37,11 +41,11 @@ try:
             
             if st.button("CONFIRMAR RESERVA", use_container_width=True):
                 st.balloons()
-                st.success(f"¡Reserva capturada! (Avisale a Sofía: {hor} hs)")
-                st.info("Nota: El guardado automático en el Excel se activará cuando los Secrets de Streamlit estén vinculados.")
+                st.success(f"¡Reserva capturada! Avisale a Sofía: {hor} hs")
     else:
-        st.error("No encuentro la columna 'nombre' en el Drive.")
+        st.error("❌ No encuentro la columna 'nombre'.")
+        st.write("Columnas que detecto en tu Drive:", list(df.columns))
+        st.info("Asegurate de que en la celda A1 de tu planilla diga 'nombre'.")
 
 except Exception as e:
-    st.error("Error al cargar los datos.")
-    st.write("Asegúrate de que la planilla esté compartida como 'Cualquier persona con el enlace'.")
+    st.error("Error al cargar los datos. Refrescá la página.")
