@@ -8,18 +8,26 @@ URL_ARCA = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRT
 
 st.set_page_config(page_title="Arca S&S - Gestión", layout="centered")
 
-# Ocultar menús para estética de App
+# Estética de la App
 st.markdown("<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}</style>", unsafe_allow_html=True)
 
-# Conexión oficial
+# Conexión
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
-    df_s = conn.read(spreadsheet=URL_ARCA, worksheet="Socios", ttl=0)
-    df_r = conn.read(spreadsheet=URL_ARCA, worksheet="Reservas", ttl=0)
-    df_s.columns = [str(c).strip().lower() for c in df_s.columns]
-    df_r.columns = [str(c).strip().lower() for c in df_r.columns]
-    return df_s, df_r
+    try:
+        df_s = conn.read(spreadsheet=URL_ARCA, worksheet="Socios", ttl=0)
+        df_r = conn.read(spreadsheet=URL_ARCA, worksheet="Reservas", ttl=0)
+        # Limpiar nombres de columnas (quitar espacios y poner minúsculas)
+        df_s.columns = [str(c).strip().lower() for c in df_s.columns]
+        df_r.columns = [str(c).strip().lower() for c in df_r.columns]
+        # Quitar filas que estén totalmente vacías
+        df_s = df_s.dropna(how='all')
+        df_r = df_r.dropna(how='all')
+        return df_s, df_r
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
+        return pd.DataFrame(), pd.DataFrame()
 
 # --- BARRA LATERAL ---
 st.sidebar.title("Menú Arca S&S")
@@ -32,34 +40,36 @@ if modo == "Reservas Alumnos":
         st.image("logo.png", width=120)
     
     df_s, df_r = cargar_datos()
-    df_s['nombre_full'] = df_s['nombre'] + " " + df_s['apellido']
     
-    alumno = st.selectbox("Seleccioná tu nombre", [""] + df_s['nombre_full'].tolist())
-    
-    if alumno:
-        idx = df_s[df_s['nombre_full'] == alumno].index[0]
-        saldo = df_s.at[idx, 'saldo_clases']
-        st.info(f"Hola **{alumno}**. Clases restantes: **{saldo}**")
+    if not df_s.empty:
+        # Combinamos nombre y apellido para el selector
+        df_s['nombre_full'] = df_s['nombre'].astype(str) + " " + df_s['apellido'].astype(str)
+        alumno = st.selectbox("Seleccioná tu nombre", [""] + df_s['nombre_full'].tolist())
         
-        if saldo > 0:
-            fec = st.date_input("Fecha de clase", min_value=pd.to_datetime("today"))
-            hor = st.selectbox("Horario", ["08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00"])
+        if alumno:
+            idx = df_s[df_s['nombre_full'] == alumno].index[0]
+            saldo = df_s.at[idx, 'saldo_clases']
+            st.info(f"Hola **{alumno}**. Clases restantes: **{int(saldo)}**")
             
-            if st.button("CONFIRMAR TURNO", use_container_width=True):
-                # 1. Guardar Reserva
-                nueva_r = pd.DataFrame([{"socio_id": alumno, "fecha": str(fec), "hora": hor}])
-                df_r_act = pd.concat([df_r, nueva_r], ignore_index=True)
-                conn.update(spreadsheet=URL_ARCA, worksheet="Reservas", data=df_r_act)
+            if saldo > 0:
+                fec = st.date_input("Fecha de clase", min_value=pd.to_datetime("today"))
+                hor = st.selectbox("Horario", ["08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00"])
                 
-                # 2. Descontar Saldo
-                df_s.at[idx, 'saldo_clases'] = saldo - 1
-                conn.update(spreadsheet=URL_ARCA, worksheet="Socios", data=df_s.drop(columns=['nombre_full']))
-                
-                st.balloons()
-                st.success("¡Tu horario está confirmado! En caso de que no puedas asistir, ¡avisanos!")
-                st.rerun()
-        else:
-            st.error("No te quedan clases. Contactá a Sofía para renovar.")
+                if st.button("CONFIRMAR TURNO", use_container_width=True):
+                    # 1. Guardar Reserva
+                    nueva_r = pd.DataFrame([{"socio_id": alumno, "fecha": str(fec), "hora": hor}])
+                    df_r_act = pd.concat([df_r, nueva_r], ignore_index=True)
+                    conn.update(spreadsheet=URL_ARCA, worksheet="Reservas", data=df_r_act)
+                    
+                    # 2. Descontar Saldo
+                    df_s.at[idx, 'saldo_clases'] = saldo - 1
+                    conn.update(spreadsheet=URL_ARCA, worksheet="Socios", data=df_s.drop(columns=['nombre_full']))
+                    
+                    st.balloons()
+                    st.success("¡Tu horario está confirmado! En caso de que no puedas asistir, ¡avisanos!")
+                    st.rerun()
+            else:
+                st.error("No te quedan clases disponibles.")
 
 # --- VISTA ADMINISTRADOR ---
 else:
@@ -72,13 +82,18 @@ else:
 
         with tab1:
             dia = st.date_input("Día a consultar:", value=pd.to_datetime("today"))
-            hoy = df_r[df_r['fecha'] == str(dia)]
-            st.dataframe(hoy[['socio_id', 'hora']], use_container_width=True, hide_index=True)
+            if not df_r.empty:
+                hoy = df_r[df_r['fecha'] == str(dia)]
+                st.dataframe(hoy[['socio_id', 'hora']], use_container_width=True, hide_index=True)
 
         with tab2:
-            df_s_v = df_s.copy()
-            df_s_v['vencimiento'] = pd.to_datetime(df_s_v['vencimiento']).dt.strftime('%d/%m/%Y')
-            st.dataframe(df_s_v[['nombre', 'apellido', 'contacto', 'saldo_clases', 'vencimiento']], use_container_width=True, hide_index=True)
+            if not df_s.empty:
+                df_s_v = df_s.copy()
+                # Intentar formatear fecha para vista
+                try:
+                    df_s_v['vencimiento'] = pd.to_datetime(df_s_v['vencimiento']).dt.strftime('%d/%m/%Y')
+                except: pass
+                st.dataframe(df_s_v[['nombre', 'apellido', 'contacto', 'saldo_clases', 'vencimiento']], use_container_width=True, hide_index=True)
 
         with tab3:
             col1, col2 = st.columns(2)
@@ -92,18 +107,22 @@ else:
                     v = st.date_input("Vencimiento")
                     if st.form_submit_button("Guardar"):
                         nuevo = pd.DataFrame([{"nombre": n, "apellido": a, "contacto": c, "saldo_clases": s, "vencimiento": str(v)}])
-                        conn.update(spreadsheet=URL_ARCA, worksheet="Socios", data=pd.concat([df_s, nuevo], ignore_index=True))
+                        df_s_final = pd.concat([df_s, nuevo], ignore_index=True)
+                        conn.update(spreadsheet=URL_ARCA, worksheet="Socios", data=df_s_final)
                         st.success("¡Socio Creado!")
+                        st.rerun()
 
             with col2:
                 st.subheader("💰 Cargar Abono")
-                s_sel = st.selectbox("Socio", df_s['nombre'].tolist())
-                clases_plus = st.number_input("Sumar clases", value=8)
-                ven_nuevo = st.date_input("Nuevo Vencimiento")
-                if st.button("Actualizar"):
-                    df_s.loc[df_s['nombre'] == s_sel, 'saldo_clases'] += clases_plus
-                    df_s.loc[df_s['nombre'] == s_sel, 'vencimiento'] = str(ven_nuevo)
-                    conn.update(spreadsheet=URL_ARCA, worksheet="Socios", data=df_s)
-                    st.success("¡Abono cargado!")
+                if not df_s.empty:
+                    s_sel = st.selectbox("Socio", df_s['nombre'].tolist())
+                    clases_plus = st.number_input("Sumar clases", value=8)
+                    ven_nuevo = st.date_input("Nuevo Vencimiento")
+                    if st.button("Actualizar"):
+                        df_s.loc[df_s['nombre'] == s_sel, 'saldo_clases'] += clases_plus
+                        df_s.loc[df_s['nombre'] == s_sel, 'vencimiento'] = str(ven_nuevo)
+                        conn.update(spreadsheet=URL_ARCA, worksheet="Socios", data=df_s)
+                        st.success("¡Abono cargado!")
+                        st.rerun()
     else:
-        st.info("Área protegida. Ingresá la clave en el panel lateral.")
+        st.info("Ingresá la clave 'Samuel28' para administrar.")
