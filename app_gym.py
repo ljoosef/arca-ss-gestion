@@ -3,12 +3,12 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import os
 
-# URL de tu planilla
+# URL de tu planilla (Asegúrate de que sea esta)
 URL_PLANILLA = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/edit?usp=sharing"
 
 st.set_page_config(page_title="Arca S&S - Reservas", layout="centered")
 
-# Estética limpia
+# Ocultar menús
 st.markdown("<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}</style>", unsafe_allow_html=True)
 
 # Logo
@@ -19,11 +19,11 @@ if os.path.exists("logo.png"):
 st.title("🏋️ Arca S&S")
 st.subheader("Reserva de Clases")
 
-# Conexión usando los Secrets que guardaste
+# Conexión directa
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    # Leer Socios
+    # Leer Socios usando la URL directamente
     df_socios = conn.read(spreadsheet=URL_PLANILLA, worksheet="Socios", ttl=0)
     
     if not df_socios.empty:
@@ -35,21 +35,23 @@ try:
             hor = st.selectbox("Horario", ["08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00"])
             
             if st.button("CONFIRMAR RESERVA", use_container_width=True):
-                # 1. Leer Reservas actuales
+                # Leer Reservas actuales
                 df_reservas = conn.read(spreadsheet=URL_PLANILLA, worksheet="Reservas", ttl=0)
                 
-                # 2. Nueva fila
+                # Crear nueva fila
                 nueva = pd.DataFrame([{"nombre": alumno, "fecha": str(fec), "hora": hor}])
                 
-                # 3. Guardar
+                # Unir datos
                 df_final = pd.concat([df_reservas, nueva], ignore_index=True)
+                
+                # GUARDAR en la planilla
                 conn.update(spreadsheet=URL_PLANILLA, worksheet="Reservas", data=df_final)
                 
                 st.balloons()
-                st.success(f"¡Listo {alumno}! Turno guardado para el {fec} a las {hor}.")
+                st.success(f"¡Listo {alumno}! Turno guardado.")
     else:
-        st.warning("Cargá nombres en la pestaña 'Socios' de tu Drive.")
+        st.warning("No hay socios en la planilla.")
 
 except Exception as e:
-    st.error("Error de conexión.")
-    st.info("Asegúrate de que la planilla esté compartida como EDITOR.")
+    st.error("Error de conexión con Google Sheets.")
+    st.info("Revisa que la planilla esté compartida como EDITOR para cualquier persona con el vínculo.")
