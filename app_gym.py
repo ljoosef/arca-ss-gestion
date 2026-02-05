@@ -2,27 +2,30 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
-# URL BASE
-URL_ARCA = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/edit"
+st.set_page_config(page_title="Arca S&S", layout="centered")
 
-st.title("🔍 Diagnóstico Arca S&S")
+# Conexión ultra-directa
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    # Intentamos leer solo la primera pestaña para probar conexión
-    df = conn.read(spreadsheet=URL_ARCA, worksheet="Socios", ttl=0)
-    
-    st.success("✅ ¡CONEXIÓN EXITOSA!")
-    st.write("Datos encontrados en 'Socios':")
-    st.dataframe(df.head())
-    
-    st.info("Si ves tus datos arriba, el problema era el código anterior. Avisame y te paso el definitivo.")
+def cargar_datos():
+    try:
+        # Buscamos la pestaña 'Socios' usando el ID de los Secrets
+        df_s = conn.read(worksheet="Socios", ttl=0)
+        df_s.columns = [str(c).strip().lower() for c in df_s.columns]
+        return df_s
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
+        return pd.DataFrame()
 
-except Exception as e:
-    st.error("❌ LA CONEXIÓN SIGUE FALLANDO")
-    st.write("Detalle técnico del error:")
-    st.code(str(e))
+st.title("🏋️ Arca S&S")
+df = cargar_datos()
+
+if not df.empty:
+    st.success("✅ ¡Conectado con éxito!")
+    st.write("Lista de Alumnos:")
+    st.dataframe(df[['nombre', 'apellido', 'saldo_clases']], hide_index=True)
     
-    if "400" in str(e):
-        st.warning("El Error 400 indica que Google recibe la llave pero no encuentra la pestaña o el archivo. Revisá que la pestaña se llame 'Socios' (exactamente así).")
+    # Selector simple para probar
+    alumno = st.selectbox("Seleccioná un alumno:", [""] + df['nombre'].tolist())
+    if alumno:
+        st.info(f"Hola {alumno}, bienvenido a Arca.")
