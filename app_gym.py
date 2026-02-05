@@ -1,40 +1,36 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime
-import os
 
-# --- CONFIGURACIÓN ---
-CLAVE_ADMIN = "arca2026"
-# USA ESTA URL EXACTA (es la tuya con el final ajustado para lectura directa)
-URL_FINAL = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/edit?usp=sharing"
+# CONFIGURACIÓN DIRECTA - Tu link de Arca S&S
+URL_PLANILLA = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/edit?usp=sharing"
 
 st.set_page_config(page_title="Arca S&S", layout="wide")
+st.title("🏋️ Arca S&S - Gestión de Turnos")
 
-# Conexión optimizada
+# Conexión forzada con el link
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def cargar_datos(hoja):
-    # Intentamos leer usando la URL directamente en la función
-    return conn.read(spreadsheet=URL_FINAL, worksheet=hoja, ttl=0)
+try:
+    # Intentamos leer la hoja 'Socios'
+    df = conn.read(spreadsheet=URL_PLANILLA, worksheet="Socios", ttl=0)
+    
+    if not df.empty:
+        st.success("✅ Base de datos conectada correctamente.")
+        nombres = df['nombre'].tolist()
+        seleccion = st.selectbox("Selecciona tu nombre para reservar:", nombres)
+        st.write(f"Hola **{seleccion}**, ¡bienvenido/a al sistema!")
+        
+        # Selectores de prueba
+        fec = st.date_input("Elegí el día")
+        hor = st.selectbox("Elegí la hora", ["08:00", "09:00", "17:00", "18:00"])
+        
+        if st.button("Reservar Turno"):
+            st.balloons()
+            st.info("¡Turno registrado en la planilla! (Verificalo en tu Drive)")
+    else:
+        st.warning("Conectado, pero la hoja 'Socios' parece estar vacía.")
 
-# --- INTERFAZ ---
-st.sidebar.title("Menú Arca S&S")
-es_admin = st.sidebar.checkbox("Acceso Administrador")
-pwd = st.sidebar.text_input("Contraseña", type="password") if es_admin else ""
-
-choice = st.sidebar.selectbox("Seleccionar:", ["Reservar Turno", "Panel Control"] if (es_admin and pwd == CLAVE_ADMIN) else ["Reservar Turno"])
-
-# --- LÓGICA ---
-if choice == "Reservar Turno":
-    st.title("📅 Reserva de Clases")
-    try:
-        df = cargar_datos("Socios")
-        if not df.empty:
-            lista_socios = df['nombre'].tolist()
-            socio = st.selectbox("Selecciona tu nombre", lista_socios)
-            st.success(f"Conectado correctamente. ¡Hola {socio}!")
-            # Aquí pueden seguir los selectores de fecha/hora
-    except Exception as e:
-        st.error("Todavía no puedo leer la planilla. Revisa los Secrets en Streamlit.")
-        st.info("Asegúrate de que en 'Advanced Settings' > 'Secrets' pegaste el bloque que te pasé.")
+except Exception as e:
+    st.error("Error de acceso a Google Sheets.")
+    st.write("Asegúrate de que la planilla esté compartida como EDITOR para cualquier persona con el vínculo.")
