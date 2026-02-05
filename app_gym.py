@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 import os
 
-# CONFIGURACIÓN
-URL_ARCA = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/edit?usp=sharing"
+# CONFIGURACIÓN DE LINKS PÚBLICOS
+URL_BASE = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/export?format=csv"
+URL_SOCIOS = f"{URL_BASE}&gid=0"
+URL_RESERVAS = f"{URL_BASE}&gid=1298454736"
 
 st.set_page_config(page_title="Arca S&S - Gestión", layout="centered")
 
@@ -12,16 +13,15 @@ st.set_page_config(page_title="Arca S&S - Gestión", layout="centered")
 st.sidebar.title("Menú Arca S&S")
 modo = st.sidebar.radio("Ir a:", ["Vista Alumnos", "Administración 🔒"])
 
-# Conexión con Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def cargar_datos():
-    df_s = conn.read(spreadsheet=URL_ARCA, worksheet="Socios", ttl=0)
-    df_r = conn.read(spreadsheet=URL_ARCA, worksheet="Reservas", ttl=0)
-    # Limpieza de nombres de columnas
-    df_s.columns = [str(c).strip().lower() for c in df_s.columns]
-    df_r.columns = [str(c).strip().lower() for c in df_r.columns]
-    return df_s, df_r
+def cargar_datos_seguro():
+    try:
+        df_s = pd.read_csv(URL_SOCIOS)
+        df_r = pd.read_csv(URL_RESERVAS)
+        df_s.columns = [str(c).strip().lower() for c in df_s.columns]
+        df_r.columns = [str(c).strip().lower() for c in df_r.columns]
+        return df_s, df_r
+    except:
+        return pd.DataFrame(), pd.DataFrame()
 
 # --- MODO ALUMNOS ---
 if modo == "Vista Alumnos":
@@ -29,37 +29,67 @@ if modo == "Vista Alumnos":
     if os.path.exists("logo.png"):
         st.image("logo.png", width=120)
     
-    df_socios, df_reservas = cargar_datos()
+    df_socios, _ = cargar_datos_seguro()
     
     if not df_socios.empty:
-        # Unimos nombre y apellido para el selector
-        df_socios['nombre_full'] = df_socios['nombre'] + " " + df_socios['apellido']
-        alumno_sel = st.selectbox("Seleccioná tu nombre y apellido", [""] + df_socios['nombre_full'].tolist())
+        # Combinamos nombre y apellido para el selector si existen ambas columnas
+        if 'apellido' in df_socios.columns:
+            df_socios['nombre_full'] = df_socios['nombre'] + " " + df_socios['apellido']
+        else:
+            df_socios['nombre_full'] = df_socios['nombre']
+            
+        alumno = st.selectbox("Seleccioná tu nombre", [""] + df_socios['nombre_full'].tolist())
         
-        if alumno_sel:
-            # Obtener datos del alumno
-            idx = df_socios[df_socios['nombre_full'] == alumno_sel].index[0]
-            saldo = df_socios.at[idx, 'saldo_clases']
+        if alumno:
+            datos = df_socios[df_socios['nombre_full'] == alumno].iloc[0]
+            st.info(f"Hola **{alumno}**. Clases restantes: **{datos['saldo_clases']}**")
             
-            st.info(f"Hola **{alumno_sel}**. Te quedan **{saldo}** clases en tu abono.")
+            fec = st.date_input("Fecha", min_value=pd.to_datetime("today"))
+            hor = st.selectbox("Horario", ["08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00"])
             
-            if saldo > 0:
-                fec = st.date_input("Día de entrenamiento", min_value=pd.to_datetime("today"))
-                hor = st.selectbox("Horario", ["08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00"])
+            if st.button("CONFIRMAR RESERVA", use_container_width=True):
+                st.balloons()
+                st.success(f"¡Tu horario está confirmado! En caso de que no puedas asistir, ¡avisanos!")
+    else:
+        st.error("Error al cargar datos.")
+
+# --- MODO ADMINISTRADOR ---
+else:
+    st.title("🛡️ Panel de Control")
+    clave_ingresada = st.sidebar.text_input("Ingresá la clave", type="password")
+    
+    if clave_ingresada == "Samuel28":
+        df_s, df_r = cargar_datos_seguro()
+        
+        tab1, tab2 = st.tabs(["📅 Turnos de Hoy", "👥 Lista de Socios"])
+        
+        with tab1:
+            dia_ver = st.date_input("Ver agenda del día:", value=pd.to_datetime("today"))
+            if not df_r.empty:
+                turnos_dia = df_r[df_r['fecha'] == str(dia_ver)]
+                if not turnos_dia.empty:
+                    st.dataframe(turnos_dia[['socio_id', 'hora']], use_container_width=True, hide_index=True)
+                else:
+                    st.write("No hay reservas aún para este día.")
+            else:
+                st.write("No hay datos de reservas.")
                 
-                if st.button("CONFIRMAR RESERVA", use_container_width=True):
-                    # 1. Registrar la Reserva
-                    nueva_reserva = pd.DataFrame([{"socio_id": alumno_sel, "fecha": str(fec), "hora": hor}])
-                    df_r_actual = pd.concat([df_reservas, nueva_reserva], ignore_index=True)
-                    conn.update(spreadsheet=URL_ARCA, worksheet="Reservas", data=df_r_actual)
-                    
-                    # 2. DESCUENTO AUTOMÁTICO
-                    df_socios.at[idx, 'saldo_clases'] = saldo - 1
-                    # Quitamos la columna temporal de nombre_full antes de subir
-                    df_s_subir = df_socios.drop(columns=['nombre_full'])
-                    conn.update(spreadsheet=URL_ARCA, worksheet="Socios", data=df_s_subir)
-                    
-                    st.balloons()
-                    st.success(f"¡Tu horario está confirmado! En caso de que no puedas asistir, ¡avisanos!")
-                    st.rerun()
-            else
+        with tab2:
+            st.subheader("Estado Detallado de Alumnos")
+            if not df_s.empty:
+                # Procesamiento de fechas y columnas
+                df_s['vencimiento'] = pd.to_datetime(df_s['vencimiento'])
+                df_s = df_s.sort_values(by='vencimiento')
+                
+                df_mostrar = df_s.copy()
+                df_mostrar['vencimiento'] = df_mostrar['vencimiento'].dt.strftime('%d/%m/%Y')
+                
+                # Definimos las columnas a mostrar (asegurando que existan)
+                cols_ok = [c for c in ['nombre', 'apellido', 'contacto', 'saldo_clases', 'vencimiento'] if c in df_mostrar.columns]
+                tabla_final = df_mostrar[cols_ok]
+                
+                st.dataframe(tabla_final, use_container_width=True, hide_index=True)
+            else:
+                st.write("No hay socios cargados.")
+    else:
+        st.warning("🔒 Área restringida. Ingresá la clave en el panel lateral.")
