@@ -1,22 +1,24 @@
 import streamlit as st
 import pandas as pd
 
-# URL DE EXPORTACIÓN DIRECTA (Ajustada para leer tu Drive)
-URL_DATOS = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2_grYykSRTBXAZgLZvrnOJpM0/export?format=csv&gid=1298454736"
+# LINK DE EXPORTACIÓN DIRECTA (Asegúrate de copiarlo todo)
+URL_ARCA = "https://docs.google.com/spreadsheets/d/1w1Z2wb2isbD8uHbIFH2QgrYykSRTBXAZgLZvrnOJpM0/export?format=csv&gid=1298454736"
 
 st.set_page_config(page_title="Arca S&S", layout="wide")
 st.title("🏋️ Arca S&S - Gestión de Turnos")
 
 try:
-    # Leemos los datos directamente como CSV público
-    df = pd.read_csv(URL_DATOS)
+    # Leemos la planilla directamente
+    df = pd.read_csv(URL_ARCA)
     
-    # Limpiamos nombres de columnas por si hay espacios
-    df.columns = df.columns.str.strip()
+    # Limpiamos nombres de columnas
+    df.columns = df.columns.str.strip().str.lower()
 
     if not df.empty and 'nombre' in df.columns:
-        st.success("✅ Sistema conectado. Selecciona tu nombre.")
-        lista_nombres = df['nombre'].dropna().tolist()
+        st.success("✅ ¡Conectado! Ya puedes reservar tu clase.")
+        
+        # Quitamos espacios en los nombres de la lista
+        lista_nombres = df['nombre'].dropna().unique().tolist()
         
         seleccion = st.selectbox("¿Quién va a entrenar hoy?", lista_nombres)
         
@@ -26,9 +28,11 @@ try:
         
         if st.button("Confirmar Reserva"):
             st.balloons()
-            st.success(f"¡Reserva lista para {seleccion} el día {fec} a las {hor}!")
+            st.success(f"¡Reserva confirmada para {seleccion}!")
+            st.info("Recordá que podés cancelar hasta 15 minutos antes.")
     else:
-        st.warning("Asegúrate de que la primera columna de la planilla se llame 'nombre' (en minúsculas).")
+        st.warning("Revisa que en la celda A1 de tu Drive diga la palabra: nombre")
 
 except Exception as e:
-    st.error("Error al leer la planilla. Verifica que esté compartida como 'Cualquier persona con el enlace'.")
+    st.error("Error de conexión con Google Drive.")
+    st.write("Leandro, probá refrescando la página en 10 segundos.")
